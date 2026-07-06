@@ -9,9 +9,9 @@ import (
 
 	"github.com/google/uuid"
 	bolt "go.klarlabs.de/bolt"
-	"go.klarlabs.de/mcp/middleware"
 	"go.klarlabs.de/mcp/testutil"
 
+	"github.com/felixgeelhaar/heartbeat/internal/auth"
 	"github.com/felixgeelhaar/heartbeat/internal/domain"
 	"github.com/felixgeelhaar/heartbeat/internal/lifecycle"
 	mcptools "github.com/felixgeelhaar/heartbeat/internal/mcp"
@@ -232,10 +232,10 @@ func TestGetTrends_EmptyTeam(t *testing.T) {
 }
 
 func TestContextWithIdentity_Coverage(t *testing.T) {
-	// Verify middleware.ContextWithIdentity exists and works as expected.
+	// Verify auth.ContextWithIdentity exists and works as expected.
 	// This helps ensure we understand the path for my_pending_healthchecks with auth.
 	ctx := context.Background()
-	identity := &middleware.Identity{
+	identity := &auth.Identity{
 		ID:   "user-1",
 		Name: "Alice",
 		Metadata: map[string]any{
@@ -243,8 +243,8 @@ func TestContextWithIdentity_Coverage(t *testing.T) {
 		},
 	}
 
-	ctx2 := middleware.ContextWithIdentity(ctx, identity)
-	got := middleware.IdentityFromContext(ctx2)
+	ctx2 := auth.ContextWithIdentity(ctx, identity)
+	got := auth.IdentityFromContext(ctx2)
 
 	if got == nil {
 		t.Fatal("expected identity in context")

@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	bolt "go.klarlabs.de/bolt"
 	"go.klarlabs.de/mcp"
-	"go.klarlabs.de/mcp/middleware"
 
+	"github.com/felixgeelhaar/heartbeat/internal/auth"
 	"github.com/felixgeelhaar/heartbeat/internal/domain"
 	"github.com/felixgeelhaar/heartbeat/internal/storage"
 )
@@ -205,7 +205,7 @@ func registerHealthCheckTools(srv *mcp.Server, store *storage.Store, logger *bol
 	srv.Tool("my_pending_healthchecks").
 		Description("List open health checks where the authenticated user has not yet voted on all metrics. Requires authentication.").
 		Handler(func(ctx context.Context, in struct{}) (any, error) {
-			identity := middleware.IdentityFromContext(ctx)
+			identity := auth.IdentityFromContext(ctx)
 			if identity == nil {
 				return nil, fmt.Errorf("authentication required")
 			}
