@@ -9,9 +9,9 @@ import (
 
 	"github.com/google/uuid"
 	bolt "go.klarlabs.de/bolt"
-	"go.klarlabs.de/mcp/middleware"
 	mcpserver "go.klarlabs.de/mcp/server"
 
+	"github.com/felixgeelhaar/heartbeat/internal/auth"
 	"github.com/felixgeelhaar/heartbeat/internal/domain"
 	"github.com/felixgeelhaar/heartbeat/internal/lifecycle"
 	mcptools "github.com/felixgeelhaar/heartbeat/internal/mcp"
@@ -68,12 +68,12 @@ func TestMyPendingHealthchecks_WithAuth_NoTeamID(t *testing.T) {
 	srv, _ := newRawServer(t)
 
 	// Identity with no team_id in metadata
-	identity := &middleware.Identity{
+	identity := &auth.Identity{
 		ID:       "user-1",
 		Name:     "Alice",
 		Metadata: map[string]any{},
 	}
-	ctx := middleware.ContextWithIdentity(context.Background(), identity)
+	ctx := auth.ContextWithIdentity(context.Background(), identity)
 
 	_, err := executeTool(t, srv, ctx, "my_pending_healthchecks", map[string]any{})
 	if err == nil {
@@ -112,14 +112,14 @@ func TestMyPendingHealthchecks_WithAuth_ValidTeamID_NoPending(t *testing.T) {
 		})
 	}
 
-	identity := &middleware.Identity{
+	identity := &auth.Identity{
 		ID:   "user-alice",
 		Name: "Alice",
 		Metadata: map[string]any{
 			"team_id": team.ID,
 		},
 	}
-	ctx := middleware.ContextWithIdentity(context.Background(), identity)
+	ctx := auth.ContextWithIdentity(context.Background(), identity)
 
 	raw, err := executeTool(t, srv, ctx, "my_pending_healthchecks", map[string]any{})
 	if err != nil {
@@ -169,14 +169,14 @@ func TestMyPendingHealthchecks_WithAuth_HasPending(t *testing.T) {
 		CreatedAt:     now,
 	})
 
-	identity := &middleware.Identity{
+	identity := &auth.Identity{
 		ID:   "user-bob",
 		Name: "Bob",
 		Metadata: map[string]any{
 			"team_id": team.ID,
 		},
 	}
-	ctx := middleware.ContextWithIdentity(context.Background(), identity)
+	ctx := auth.ContextWithIdentity(context.Background(), identity)
 
 	raw, err := executeTool(t, srv, ctx, "my_pending_healthchecks", map[string]any{})
 	if err != nil {
@@ -229,14 +229,14 @@ func TestSubmitVote_WithAuthIdentity(t *testing.T) {
 	store.CreateHealthCheck(hc)
 
 	// Submit vote using auth identity (no explicit participant)
-	identity := &middleware.Identity{
+	identity := &auth.Identity{
 		ID:   "user-carol",
 		Name: "Carol",
 		Metadata: map[string]any{
 			"team_id": team.ID,
 		},
 	}
-	ctx := middleware.ContextWithIdentity(context.Background(), identity)
+	ctx := auth.ContextWithIdentity(context.Background(), identity)
 
 	raw, err := executeTool(t, srv, ctx, "submit_vote", map[string]any{
 		"healthcheck_id": hc.ID,

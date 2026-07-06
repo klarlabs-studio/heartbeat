@@ -14,6 +14,7 @@ import (
 	bolt "go.klarlabs.de/bolt"
 	"go.klarlabs.de/mcp"
 	"go.klarlabs.de/mcp/middleware"
+	"go.klarlabs.de/mcp/transport"
 
 	"github.com/felixgeelhaar/heartbeat/internal/auth"
 	"github.com/felixgeelhaar/heartbeat/internal/config"
@@ -182,7 +183,18 @@ func main() {
 			middleware.Timeout(30*time.Second),
 		)
 
-		// Configure authentication based on config mode
+		httpOpts := []mcp.HTTPOption{
+			mcp.WithReadTimeout(30 * time.Second),
+			mcp.WithWriteTimeout(30 * time.Second),
+		}
+
+		// Configure authentication based on config mode.
+		//
+		// mcp-go v1.19.0 removed in-library auth: token extraction and validation
+		// now run at the transport layer via transport.WithRequestContextFn, which
+		// stashes the authenticated auth.Identity in the request context. The
+		// auth.RequireAuth middleware then enforces it per JSON-RPC method,
+		// skipping the handshake methods (initialize, ping) as before.
 		switch cfg.Auth.Mode {
 		case "oidc":
 			oidcValidator, err := auth.NewOIDCValidator(auth.OIDCConfig{
@@ -193,30 +205,20 @@ func main() {
 			if err != nil {
 				logger.Fatal().Err(err).Msg("failed to initialize OIDC auth")
 			}
-			middlewares = append(middlewares,
-				middleware.Auth(
-					middleware.NewOAuth2Authenticator(
-						middleware.OAuth2Config{
-							ClientID:       cfg.Auth.OIDC.ClientID,
-							RequiredScopes: cfg.Auth.OIDC.Scopes,
-						},
-						oidcValidator,
-					).Authenticate,
-					middleware.WithAuthSkipMethods("initialize", "ping"),
-				),
+			httpOpts = append(httpOpts,
+				transport.WithRequestContextFn(auth.RequestContextFn(oidcValidator.Authenticator())),
 			)
+			middlewares = append(middlewares, auth.RequireAuth("initialize", "ping"))
 			logger.Info().Str("issuer", cfg.Auth.OIDC.Issuer).Msg("OIDC auth enabled")
 
 		default:
 			// Token-based auth (legacy)
 			if tokenValidator, err := auth.LoadConfig(*authConfigPath); err == nil {
 				logger.Info().Str("config", *authConfigPath).Msg("token auth enabled")
-				middlewares = append(middlewares,
-					middleware.Auth(
-						middleware.BearerTokenAuthenticator(tokenValidator),
-						middleware.WithAuthSkipMethods("initialize", "ping"),
-					),
+				httpOpts = append(httpOpts,
+					transport.WithRequestContextFn(auth.RequestContextFn(tokenValidator.Authenticator())),
 				)
+				middlewares = append(middlewares, auth.RequireAuth("initialize", "ping"))
 			} else if !os.IsNotExist(err) {
 				logger.Warn().Err(err).Msg("failed to load auth config, running without auth")
 			} else {
@@ -226,10 +228,7 @@ func main() {
 
 		logger.Info().Str("addr", *addr).Msg("starting HTTP/SSE transport")
 		if err := mcp.ServeHTTPWithMiddleware(ctx, srv, *addr,
-			[]mcp.HTTPOption{
-				mcp.WithReadTimeout(30 * time.Second),
-				mcp.WithWriteTimeout(30 * time.Second),
-			},
+			httpOpts,
 			mcp.WithMiddleware(middlewares...),
 		); err != nil {
 			logger.Fatal().Err(err).Msg("HTTP server error")

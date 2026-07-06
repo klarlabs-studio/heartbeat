@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	bolt "go.klarlabs.de/bolt"
 	"go.klarlabs.de/mcp"
-	"go.klarlabs.de/mcp/middleware"
 
+	"github.com/felixgeelhaar/heartbeat/internal/auth"
 	"github.com/felixgeelhaar/heartbeat/internal/domain"
 	"github.com/felixgeelhaar/heartbeat/internal/storage"
 )
@@ -32,7 +32,7 @@ func registerVoteTools(srv *mcp.Server, store *storage.Store, logger *bolt.Logge
 		Handler(func(ctx context.Context, in submitVoteInput) (any, error) {
 			// Auto-fill participant from auth identity when available
 			if in.Participant == "" {
-				if identity := middleware.IdentityFromContext(ctx); identity != nil {
+				if identity := auth.IdentityFromContext(ctx); identity != nil {
 					in.Participant = identity.Name
 				} else {
 					return nil, fmt.Errorf("participant is required (no auth identity available)")

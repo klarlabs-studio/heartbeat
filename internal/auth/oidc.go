@@ -20,8 +20,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"go.klarlabs.de/mcp/middleware"
 )
 
 // OIDCConfig holds OIDC provider configuration.
@@ -71,11 +69,23 @@ func NewOIDCValidator(cfg OIDCConfig) (*OIDCValidator, error) {
 	return v, nil
 }
 
-// ValidateToken implements middleware.TokenValidator.
-// It validates the token by calling the OIDC provider's userinfo endpoint.
-// This is simpler than local JWT validation (no JWKS parsing) and works
-// with all providers.
-func (v *OIDCValidator) ValidateToken(ctx context.Context, token string) (*middleware.TokenClaims, error) {
+// Authenticator adapts the OIDC validator to the Authenticator signature
+// consumed by RequestContextFn: it validates the bearer token against the
+// provider and returns the derived Identity.
+func (v *OIDCValidator) Authenticator() Authenticator {
+	return func(ctx context.Context, token string) (*Identity, error) {
+		claims, err := v.ValidateToken(ctx, token)
+		if err != nil {
+			return nil, err
+		}
+		return IdentityFromClaims(claims, token), nil
+	}
+}
+
+// ValidateToken validates the token by calling the OIDC provider's userinfo
+// endpoint. This is simpler than local JWT validation (no JWKS parsing) and
+// works with all providers.
+func (v *OIDCValidator) ValidateToken(ctx context.Context, token string) (*TokenClaims, error) {
 	disc, err := v.discover()
 	if err != nil {
 		return nil, fmt.Errorf("oidc discovery: %w", err)
@@ -110,17 +120,16 @@ func (v *OIDCValidator) ValidateToken(ctx context.Context, token string) (*middl
 		return nil, fmt.Errorf("decode userinfo: %w", err)
 	}
 
-	return &middleware.TokenClaims{
+	return &TokenClaims{
 		Subject:  userinfo.Sub,
 		Audience: []string{v.clientID},
 		Issuer:   v.issuer,
 	}, nil
 }
 
-// IdentityFromClaims converts OIDC token claims to a middleware.Identity.
-func IdentityFromClaims(claims *middleware.TokenClaims, token string) *middleware.Identity {
-	// Fetch userinfo for the display name
-	return &middleware.Identity{
+// IdentityFromClaims converts OIDC token claims to an Identity.
+func IdentityFromClaims(claims *TokenClaims, token string) *Identity {
+	return &Identity{
 		ID:   claims.Subject,
 		Name: claims.Subject,
 		Metadata: map[string]any{
