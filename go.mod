@@ -21,7 +21,7 @@ require (
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	go.klarlabs.de/bolt v1.5.2
-	go.klarlabs.de/mcp v1.21.0
+	go.klarlabs.de/mcp v1.22.0
 	go.klarlabs.de/statekit v1.8.0
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.44.0 // indirect
