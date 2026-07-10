@@ -17,9 +17,17 @@ type compareInput struct {
 	Limit  int    `json:"limit,omitempty" jsonschema:"description=Number of most recent sessions to compare (default 5)"`
 }
 
+// compareOutput is the structured result of compare_sessions.
+type compareOutput struct {
+	TeamID        string               `json:"team_id"`
+	SessionsCount int                  `json:"sessions_count"`
+	Trends        []domain.MetricTrend `json:"trends"`
+}
+
 func registerCompareTools(srv *mcp.Server, store *storage.Store, logger *bolt.Logger) {
 	srv.Tool("compare_sessions").
 		Description("Compare results across multiple health check sessions to track trends over time. Shows per-metric score progression and tendency (improving/stable/declining).").
+		OutputSchema(compareOutput{}).
 		Handler(func(ctx context.Context, in compareInput) (any, error) {
 			limit := in.Limit
 			if limit <= 0 {
@@ -86,10 +94,10 @@ func registerCompareTools(srv *mcp.Server, store *storage.Store, logger *bolt.Lo
 				return trends[i].MetricName < trends[j].MetricName
 			})
 
-			return map[string]any{
-				"team_id":        in.TeamID,
-				"sessions_count": len(hcs),
-				"trends":         trends,
+			return compareOutput{
+				TeamID:        in.TeamID,
+				SessionsCount: len(hcs),
+				Trends:        trends,
 			}, nil
 		})
 }

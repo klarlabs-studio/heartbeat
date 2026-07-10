@@ -26,6 +26,15 @@ type getResultsInput struct {
 	HealthCheckID string `json:"healthcheck_id" jsonschema:"required,description=Health check session ID"`
 }
 
+// getResultsOutput is the structured result of get_results.
+type getResultsOutput struct {
+	HealthCheck  *domain.HealthCheck   `json:"healthcheck"`
+	Results      []domain.MetricResult `json:"results"`
+	AverageScore float64               `json:"average_score"`
+	Participants int                   `json:"participants"`
+	TotalVotes   int                   `json:"total_votes"`
+}
+
 func registerVoteTools(srv *mcp.Server, store *storage.Store, logger *bolt.Logger) {
 	srv.Tool("submit_vote").
 		Description("Submit a vote for a metric in an open health check. One vote per participant per metric; re-submitting updates the existing vote.").
@@ -71,6 +80,7 @@ func registerVoteTools(srv *mcp.Server, store *storage.Store, logger *bolt.Logge
 
 	srv.Tool("get_results").
 		Description("Get aggregated results for a health check: per-metric breakdown of green/yellow/red counts, computed score (1-3), and all comments").
+		OutputSchema(getResultsOutput{}).
 		Handler(func(ctx context.Context, in getResultsInput) (any, error) {
 			hc, err := store.FindHealthCheckByID(in.HealthCheckID)
 			if err != nil {
@@ -108,12 +118,12 @@ func registerVoteTools(srv *mcp.Server, store *storage.Store, logger *bolt.Logge
 				avgScore = totalScore / float64(totalVotes)
 			}
 
-			return map[string]any{
-				"healthcheck":   hc,
-				"results":       results,
-				"average_score": avgScore,
-				"participants":  len(participants),
-				"total_votes":   totalVotes,
+			return getResultsOutput{
+				HealthCheck:  hc,
+				Results:      results,
+				AverageScore: avgScore,
+				Participants: len(participants),
+				TotalVotes:   totalVotes,
 			}, nil
 		})
 }
