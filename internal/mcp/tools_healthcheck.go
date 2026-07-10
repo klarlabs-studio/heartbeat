@@ -30,6 +30,27 @@ type listHealthChecksInput struct {
 	Limit  int    `json:"limit,omitempty" jsonschema:"description=Maximum number of results (default 20)"`
 }
 
+// getHealthCheckOutput is the structured result of get_healthcheck.
+type getHealthCheckOutput struct {
+	HealthCheck *domain.HealthCheck   `json:"healthcheck"`
+	Results     []domain.MetricResult `json:"results"`
+}
+
+// pendingHealthCheck describes an open health check with metrics the
+// authenticated user has not yet voted on.
+type pendingHealthCheck struct {
+	HealthCheck    *domain.HealthCheck `json:"healthcheck"`
+	TotalMetrics   int                 `json:"total_metrics"`
+	VotedMetrics   int                 `json:"voted_metrics"`
+	PendingMetrics []string            `json:"pending_metrics"`
+}
+
+// myPendingOutput is the structured result of my_pending_healthchecks.
+type myPendingOutput struct {
+	User    string               `json:"user"`
+	Pending []pendingHealthCheck `json:"pending"`
+}
+
 func registerHealthCheckTools(srv *mcp.Server, store *storage.Store, logger *bolt.Logger, sm domain.HealthCheckLifecycle) {
 	srv.Tool("create_healthcheck").
 		Description("Create a new health check session for a team using a template. The session starts in 'open' status, ready for votes.").
@@ -95,6 +116,7 @@ func registerHealthCheckTools(srv *mcp.Server, store *storage.Store, logger *bol
 
 	srv.Tool("get_healthcheck").
 		Description("Get details of a specific health check session including current vote counts per metric").
+		OutputSchema(getHealthCheckOutput{}).
 		Handler(func(ctx context.Context, in healthCheckIDInput) (any, error) {
 			hc, err := store.FindHealthCheckByID(in.HealthCheckID)
 			if err != nil {
@@ -116,9 +138,9 @@ func registerHealthCheckTools(srv *mcp.Server, store *storage.Store, logger *bol
 
 			results := domain.ComputeMetricResults(votes, tmpl.Metrics)
 
-			return map[string]any{
-				"healthcheck": hc,
-				"results":     results,
+			return getHealthCheckOutput{
+				HealthCheck: hc,
+				Results:     results,
 			}, nil
 		})
 
@@ -204,6 +226,7 @@ func registerHealthCheckTools(srv *mcp.Server, store *storage.Store, logger *bol
 
 	srv.Tool("my_pending_healthchecks").
 		Description("List open health checks where the authenticated user has not yet voted on all metrics. Requires authentication.").
+		OutputSchema(myPendingOutput{}).
 		Handler(func(ctx context.Context, in struct{}) (any, error) {
 			identity := auth.IdentityFromContext(ctx)
 			if identity == nil {
@@ -226,14 +249,7 @@ func registerHealthCheckTools(srv *mcp.Server, store *storage.Store, logger *bol
 				return nil, err
 			}
 
-			type pendingHC struct {
-				HealthCheck    *domain.HealthCheck `json:"healthcheck"`
-				TotalMetrics   int                 `json:"total_metrics"`
-				VotedMetrics   int                 `json:"voted_metrics"`
-				PendingMetrics []string            `json:"pending_metrics"`
-			}
-
-			var pending []pendingHC
+			var pending []pendingHealthCheck
 			for _, hc := range hcs {
 				tmpl, err := store.FindTemplateByID(hc.TemplateID)
 				if err != nil {
@@ -261,7 +277,7 @@ func registerHealthCheckTools(srv *mcp.Server, store *storage.Store, logger *bol
 				}
 
 				if len(pendingMetrics) > 0 {
-					pending = append(pending, pendingHC{
+					pending = append(pending, pendingHealthCheck{
 						HealthCheck:    hc,
 						TotalMetrics:   len(tmpl.Metrics),
 						VotedMetrics:   len(votedMetrics),
@@ -271,12 +287,12 @@ func registerHealthCheckTools(srv *mcp.Server, store *storage.Store, logger *bol
 			}
 
 			if pending == nil {
-				pending = []pendingHC{}
+				pending = []pendingHealthCheck{}
 			}
 
-			return map[string]any{
-				"user":    identity.Name,
-				"pending": pending,
+			return myPendingOutput{
+				User:    identity.Name,
+				Pending: pending,
 			}, nil
 		})
 }

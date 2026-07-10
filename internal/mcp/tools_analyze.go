@@ -28,9 +28,56 @@ type discussionInput struct {
 	IncludeTrends bool   `json:"include_trends,omitempty" jsonschema:"description=Include cross-session trend data (default true)"`
 }
 
+// analyzeMetricEntry is a single metric entry in an analysis summary's
+// strengths/concerns lists.
+type analyzeMetricEntry struct {
+	Metric string  `json:"metric"`
+	Score  float64 `json:"score"`
+	Votes  string  `json:"votes"`
+}
+
+// analyzeOutput is the structured result of analyze_healthcheck.
+type analyzeOutput struct {
+	HealthCheck  string                `json:"healthcheck"`
+	Template     string                `json:"template"`
+	Status       domain.Status         `json:"status"`
+	Participants int                   `json:"participants"`
+	Strengths    []analyzeMetricEntry  `json:"strengths"`
+	Concerns     []analyzeMetricEntry  `json:"concerns"`
+	AllResults   []domain.MetricResult `json:"all_results"`
+}
+
+// trendsOutput is the structured result of get_trends.
+type trendsOutput struct {
+	TeamID         string               `json:"team_id"`
+	SessionsCount  int                  `json:"sessions_count"`
+	Improving      []domain.MetricTrend `json:"improving"`
+	Declining      []domain.MetricTrend `json:"declining"`
+	Stable         []domain.MetricTrend `json:"stable"`
+	NeedsAttention []domain.MetricTrend `json:"needs_attention"`
+}
+
+// discussionTopic is a single suggested discussion topic.
+type discussionTopic struct {
+	Priority   int      `json:"priority"`
+	Metric     string   `json:"metric"`
+	Reason     string   `json:"reason"`
+	DataPoints []string `json:"data_points"`
+	Questions  []string `json:"suggested_questions"`
+}
+
+// discussionOutput is the structured result of get_discussion_topics.
+type discussionOutput struct {
+	HealthCheck   string            `json:"healthcheck"`
+	Topics        []discussionTopic `json:"topics"`
+	TrendWarnings []string          `json:"trend_warnings"`
+	Participants  int               `json:"participants"`
+}
+
 func registerAnalyzeTools(srv *mcp.Server, store *storage.Store, logger *bolt.Logger) {
 	srv.Tool("analyze_healthcheck").
 		Description("Generate an AI-friendly analysis summary of a health check session. Includes strongest/weakest areas, metrics needing attention, and participation stats.").
+		OutputSchema(analyzeOutput{}).
 		Handler(func(ctx context.Context, in analyzeInput) (any, error) {
 			hc, tmpl, results, votes, err := loadHealthCheckData(store, in.HealthCheckID)
 			if err != nil {
@@ -46,15 +93,15 @@ func registerAnalyzeTools(srv *mcp.Server, store *storage.Store, logger *bolt.Lo
 
 			participants := uniqueParticipants(votes)
 
-			var strengths, concerns []map[string]any
+			var strengths, concerns []analyzeMetricEntry
 			for _, r := range sorted {
 				if r.TotalVotes == 0 {
 					continue
 				}
-				entry := map[string]any{
-					"metric": r.MetricName,
-					"score":  r.Score,
-					"votes":  fmt.Sprintf("G:%d Y:%d R:%d", r.GreenCount, r.YellowCount, r.RedCount),
+				entry := analyzeMetricEntry{
+					Metric: r.MetricName,
+					Score:  r.Score,
+					Votes:  fmt.Sprintf("G:%d Y:%d R:%d", r.GreenCount, r.YellowCount, r.RedCount),
 				}
 				if r.Score >= 2.5 {
 					strengths = append(strengths, entry)
@@ -63,19 +110,20 @@ func registerAnalyzeTools(srv *mcp.Server, store *storage.Store, logger *bolt.Lo
 				}
 			}
 
-			return map[string]any{
-				"healthcheck":  hc.Name,
-				"template":     tmpl.Name,
-				"status":       hc.Status,
-				"participants": len(participants),
-				"strengths":    strengths,
-				"concerns":     concerns,
-				"all_results":  results,
+			return analyzeOutput{
+				HealthCheck:  hc.Name,
+				Template:     tmpl.Name,
+				Status:       hc.Status,
+				Participants: len(participants),
+				Strengths:    strengths,
+				Concerns:     concerns,
+				AllResults:   results,
 			}, nil
 		})
 
 	srv.Tool("get_trends").
 		Description("Analyze trends for a team across all historical sessions. Flags declining metrics and highlights improving ones.").
+		OutputSchema(trendsOutput{}).
 		Handler(func(ctx context.Context, in trendsInput) (any, error) {
 			limit := in.Limit
 			if limit <= 0 {
@@ -139,18 +187,19 @@ func registerAnalyzeTools(srv *mcp.Server, store *storage.Store, logger *bolt.Lo
 				}
 			}
 
-			return map[string]any{
-				"team_id":         in.TeamID,
-				"sessions_count":  len(hcs),
-				"improving":       improving,
-				"declining":       declining,
-				"stable":          stable,
-				"needs_attention": declining,
+			return trendsOutput{
+				TeamID:         in.TeamID,
+				SessionsCount:  len(hcs),
+				Improving:      improving,
+				Declining:      declining,
+				Stable:         stable,
+				NeedsAttention: declining,
 			}, nil
 		})
 
 	srv.Tool("get_discussion_topics").
 		Description("Generate suggested discussion topics based on health check results. Prioritizes metrics with high disagreement, declining trends, and consistently low scores.").
+		OutputSchema(discussionOutput{}).
 		Handler(func(ctx context.Context, in discussionInput) (any, error) {
 			hc, tmpl, results, votes, err := loadHealthCheckData(store, in.HealthCheckID)
 			if err != nil {
@@ -158,15 +207,7 @@ func registerAnalyzeTools(srv *mcp.Server, store *storage.Store, logger *bolt.Lo
 			}
 			_ = tmpl
 
-			type topic struct {
-				Priority   int      `json:"priority"`
-				Metric     string   `json:"metric"`
-				Reason     string   `json:"reason"`
-				DataPoints []string `json:"data_points"`
-				Questions  []string `json:"suggested_questions"`
-			}
-
-			var topics []topic
+			var topics []discussionTopic
 			priority := 1
 
 			for _, r := range results {
@@ -196,7 +237,7 @@ func registerAnalyzeTools(srv *mcp.Server, store *storage.Store, logger *bolt.Lo
 				}
 
 				if len(reasons) > 0 {
-					topics = append(topics, topic{
+					topics = append(topics, discussionTopic{
 						Priority:   priority,
 						Metric:     r.MetricName,
 						Reason:     strings.Join(reasons, " + "),
@@ -247,11 +288,11 @@ func registerAnalyzeTools(srv *mcp.Server, store *storage.Store, logger *bolt.Lo
 
 			participants := uniqueParticipants(votes)
 
-			return map[string]any{
-				"healthcheck":    hc.Name,
-				"topics":         topics,
-				"trend_warnings": trendWarnings,
-				"participants":   len(participants),
+			return discussionOutput{
+				HealthCheck:   hc.Name,
+				Topics:        topics,
+				TrendWarnings: trendWarnings,
+				Participants:  len(participants),
 			}, nil
 		})
 }

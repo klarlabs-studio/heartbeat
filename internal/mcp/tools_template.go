@@ -45,6 +45,7 @@ func registerTemplateTools(srv *mcp.Server, store *storage.Store, logger *bolt.L
 
 	srv.Tool("get_template").
 		Description("Get full details of a template including all metric definitions with good/bad descriptions").
+		OutputSchema(domain.Template{}).
 		Handler(func(ctx context.Context, in templateIDInput) (any, error) {
 			tmpl, err := store.FindTemplateByID(in.TemplateID)
 			if err != nil {

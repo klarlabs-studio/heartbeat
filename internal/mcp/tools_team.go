@@ -63,6 +63,7 @@ func registerTeamTools(srv *mcp.Server, store *storage.Store, logger *bolt.Logge
 
 	srv.Tool("get_team").
 		Description("Get details of a specific team including members").
+		OutputSchema(domain.Team{}).
 		Handler(func(ctx context.Context, in teamIDInput) (any, error) {
 			team, err := store.FindTeamByID(in.TeamID)
 			if err != nil {
