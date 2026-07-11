@@ -1,0 +1,101 @@
+# Security (nox) — standardized on the klarlabs-studio engineering bar.
+#
+# nox is the single security scanner / dependency-CVE source of truth for
+# this repo (secrets, IaC/workflow hygiene, privacy/PII, AI-security rules,
+# and dependency vulnerabilities via OSV.dev). This mirrors the reusable
+# `Security (nox)` job in klarlabs-studio/.github (.github/workflows/go-ci.yml)
+# inlined here because heartbeat runs a hand-rolled CI rather than consuming that
+# reusable workflow. Bump NOX_VERSION + NOX_SHA256 together (verify the new
+# sha256 against the published tarball) when raising the pin.
+#
+# Self-adjusting gate: report-only until a nox baseline is committed (run
+# `nox baseline add` and commit .nox/), after which it fails on net-new
+# critical/high findings. Adoption never breaks a red build.
+name: Security
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
+  pull_request:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  security:
+    name: Security (nox)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write   # nox annotate
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install nox (pinned + sha256-verified binary)
+        env:
+          NOX_VERSION: "1.7.1"
+          NOX_SHA256: "3106ab3ce7197f43a45fc1128ea27112686421e8ec3eac9be356d4ca42ab4c89"
+        run: |
+          curl -sL -o nox.tar.gz \
+            "https://github.com/nox-hq/nox/releases/download/v${NOX_VERSION}/nox_${NOX_VERSION}_linux_amd64.tar.gz"
+          echo "${NOX_SHA256}  nox.tar.gz" | sha256sum -c -
+          tar xzf nox.tar.gz && sudo mv nox /usr/local/bin/ && nox version
+      - name: Install cosign
+        # nox verifies plugin signatures by shelling out to cosign. Without
+        # it, signed plugins can't be promoted past "unverified" and install
+        # is blocked under the default community-trust policy.
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Install taint-analysis plugin
+        # nox owns code-level SAST: source-to-sink taint (SSRF, injection,
+        # path traversal). The plugin is cosign-signed; with cosign present
+        # nox promotes it to community trust and installs it (no bypass).
+        run: nox plugin install nox/taint-analysis
+      - name: Scan
+        # Release binaries exit non-zero on any unsuppressed finding; the
+        # gate step below decides what is actually fatal (net-new crit/high).
+        run: nox scan . -format json,sarif -output nox-results || true
+      - name: Upload SARIF to code scanning
+        if: always() && hashFiles('nox-results/findings.sarif') != ''
+        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
+        with:
+          sarif_file: nox-results/findings.sarif
+      - name: Annotate PR
+        if: github.event_name == 'pull_request' && hashFiles('nox-results/findings.json') != ''
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: nox annotate -input nox-results/findings.json || true
+      - name: Gate on net-new critical/high findings
+        # Self-adjusting: enforce only once the repo has an established nox
+        # baseline (at least one finding marked "baselined"). Un-baselined
+        # repos are report-only so adopting the scanner never breaks a red
+        # build — run `nox baseline add` once to turn enforcement on.
+        if: always() && hashFiles('nox-results/findings.json') != ''
+        run: |
+          f=nox-results/findings.json
+          baselined=$(jq '[.findings[]? | select(.Status=="baselined")] | length' "$f" 2>/dev/null || echo 0)
+          new=$(jq '[.findings[]? | select((.Severity=="critical" or .Severity=="high") and (.Status!="baselined"))] | length' "$f" 2>/dev/null || echo 0)
+          echo "net-new critical/high: $new (baselined findings: $baselined)"
+          if [ "$baselined" -eq 0 ]; then
+            echo "::notice::No nox baseline established — security gate is report-only. Run 'nox baseline add' and commit .nox/ to enforce net-new critical/high."
+            exit 0
+          fi
+          if [ "$new" -gt 0 ]; then
+            echo "::error::Net-new critical/high findings. Run 'nox baseline add' or remediate."
+            jq '.findings[] | select((.Severity=="critical" or .Severity=="high") and (.Status!="baselined")) | {severity:.Severity, rule:.RuleID, file:.Location.FilePath, line:.Location.StartLine}' "$f"
+            exit 1
+          fi
+      - name: Upload nox artifacts
+        if: always() && hashFiles('nox-results/**') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nox-results
+          path: nox-results/
+          retention-days: 7
