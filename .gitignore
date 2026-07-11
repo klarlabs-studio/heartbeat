@@ -24,3 +24,4 @@ web/app/node_modules/
 web/app/dist/
 .claude/
 dist/
+nox-results/
