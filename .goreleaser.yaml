@@ -22,12 +22,12 @@ builds:
 
 archives:
   - id: heartbeat
-    builds:
+    ids:
       - heartbeat
     name_template: "heartbeat_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 
 checksum:
   name_template: "checksums.txt"
