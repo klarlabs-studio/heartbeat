@@ -1,6 +1,43 @@
 # Changelog
 
-## [v1.0.0] (unreleased)
+## [v1.1.1](https://github.com/klarlabs-studio/heartbeat/releases/tag/v1.1.1) (2026-07-26)
+
+No user-facing change. This release exists because **v1.1.0 shipped with zero
+artefacts** — it was published by hand and nothing ever ran goreleaser, so
+there were no binaries to download and the Homebrew formula stayed at 1.0.0.
+
+### Changed
+
+- **The release is now automated.** `.github/workflows/release.yml` did not
+  exist; `.goreleaser.yaml` had declared a `brews:` block since it was written
+  and nothing invoked it.
+- **Publishes to `klarlabs-studio/homebrew-tap`**, whose owner matches the
+  credential that writes it. Pointing at a personally-owned tap with an
+  org-owned token returns `403 Resource not accessible by personal access
+  token`.
+- **Ships a Homebrew cask rather than a formula**, `brews` being deprecated in
+  goreleaser. `goreleaser check` now reports no deprecations.
+
+## [v1.1.0](https://github.com/klarlabs-studio/heartbeat/releases/tag/v1.1.0) (2026-07-10)
+
+Released without a changelog entry at the time; reconstructed from history.
+
+### Added
+
+- MCP data tools advertise output schemas (#12)
+
+### Changed
+
+- Klarlabs library dependencies migrated to `go.klarlabs.de` vanity paths
+- `go.klarlabs.de/mcp` to v1.22.0, migrated off the removed in-library auth
+- Dependabot auto-merge for patch and minor updates (#5)
+
+### Fixed
+
+- CI build path corrected to `./cmd/heartbeat/` (#3)
+- Transitive vite/postcss vulnerabilities patched in the dashboard SPA
+
+## [v1.0.0](https://github.com/klarlabs-studio/heartbeat/releases/tag/v1.0.0) (2026-03-28)
 
 ### Breaking Changes
 
